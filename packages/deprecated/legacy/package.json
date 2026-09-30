@@ -1,0 +1,19 @@
+{
+  "name": "@typebot.io/legacy",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@typebot.io/lib": "workspace:*",
+    "openai": "4.81.0"
+  },
+  "scripts": {}
+}

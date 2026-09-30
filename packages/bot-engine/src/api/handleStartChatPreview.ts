@@ -1,0 +1,212 @@
+import { BubbleBlockType } from "@typebot.io/blocks-bubbles/constants";
+import { messageSchema, startFromSchema } from "@typebot.io/chat-api/schemas";
+import { restartSession } from "@typebot.io/chat-session/queries/restartSession";
+import { createId } from "@typebot.io/lib/createId";
+import { withSessionStore } from "@typebot.io/runtime-session-store";
+import { z } from "zod";
+import { computeCurrentProgress } from "../computeCurrentProgress";
+import { saveStateToDatabase } from "../saveStateToDatabase";
+import { startSession } from "../startSession";
+
+export const startPreviewChatInputSchema = z.object({
+  typebotId: z
+    .string()
+    .describe(
+      "[Where to find my bot's ID?](../how-to#how-to-find-my-typebotid)",
+    ),
+  sessionId: z
+    .string()
+    .optional()
+    .describe(
+      "Deprecated and ignored. Preview creation always returns a new session ID. Use the returned sessionId to continue the conversation; existing sessions are never replaced.",
+    ),
+  startFrom: startFromSchema.optional(),
+  message: messageSchema
+    .optional()
+    .describe(
+      "Only provide it if your flow starts with an input block and you'd like to directly provide an answer to it.",
+    ),
+  isStreamEnabled: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "If enabled, you will be required to stream OpenAI completions on a client and send the generated response back to the API.",
+    ),
+  isOnlyRegistering: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "If set to `true`, it will only register the session and not start the bot. This is used for 3rd party chat platforms as it can require a session to be registered before sending the first message.",
+    ),
+  prefilledVariables: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "[More info about prefilled variables.](../../editor/variables#prefilled-variables)",
+    ),
+  isProgressBarEnabled: z
+    .boolean()
+    .optional()
+    .describe(
+      "Override whether progress tracking is enabled for this preview session.",
+    ),
+  textBubbleContentFormat: z.enum(["richText", "markdown"]).default("richText"),
+});
+
+export const startTemplatePreviewChatInputSchema = startPreviewChatInputSchema
+  .omit({ typebotId: true, isProgressBarEnabled: true })
+  .extend({
+    templateSlug: z.string(),
+  });
+
+type Context = {
+  user: { id: string } | null;
+};
+
+export const handleStartChatPreview = async ({
+  input: {
+    message,
+    isOnlyRegistering,
+    isStreamEnabled,
+    startFrom,
+    typebotId,
+    prefilledVariables,
+    isProgressBarEnabled,
+    textBubbleContentFormat,
+  },
+  context: { user },
+}: {
+  input: z.infer<typeof startPreviewChatInputSchema>;
+  context: Context;
+}) => {
+  return startPreviewSession({
+    startParams: {
+      type: "preview",
+      isOnlyRegistering,
+      isStreamEnabled,
+      startFrom,
+      typebotId,
+      userId: user?.id,
+      prefilledVariables,
+      isProgressBarEnabled,
+      textBubbleContentFormat,
+      message,
+    },
+  });
+};
+
+export const handleStartTemplatePreviewChat = async ({
+  input: {
+    message,
+    isOnlyRegistering,
+    isStreamEnabled,
+    startFrom,
+    templateSlug,
+    prefilledVariables,
+    textBubbleContentFormat,
+  },
+}: {
+  input: z.infer<typeof startTemplatePreviewChatInputSchema>;
+}) => {
+  return startPreviewSession({
+    startParams: {
+      type: "template",
+      templateSlug,
+      isOnlyRegistering,
+      isStreamEnabled,
+      startFrom,
+      prefilledVariables,
+      textBubbleContentFormat,
+      message,
+    },
+  });
+};
+
+const startPreviewSession = async ({
+  startParams,
+}: {
+  startParams: Extract<
+    Parameters<typeof startSession>[0]["startParams"],
+    { type: "preview" | "template" }
+  >;
+}) => {
+  const sessionId = createId();
+  return withSessionStore(sessionId, async (sessionStore) => {
+    const {
+      typebot,
+      messages,
+      input,
+      dynamicTheme,
+      logs,
+      clientSideActions,
+      newSessionState,
+      visitedEdges,
+      setVariableHistory,
+    } = await startSession({
+      version: 2,
+      sessionStore,
+      startParams,
+    });
+
+    const session = startParams.isOnlyRegistering
+      ? await restartSession({
+          state: newSessionState,
+        })
+      : await saveStateToDatabase({
+          session: {
+            state: newSessionState,
+          },
+          sessionId: {
+            type: "newPreview",
+            id: sessionId,
+          },
+          input,
+          logs,
+          clientSideActions,
+          visitedEdges,
+          setVariableHistory,
+          isWaitingForExternalEvent: messages.some(
+            (message) =>
+              message.type === "custom-embed" ||
+              (message.type === BubbleBlockType.EMBED &&
+                message.content.waitForEvent?.isEnabled),
+          ),
+        });
+
+    const isEnded =
+      newSessionState.progressMetadata &&
+      !input?.id &&
+      (clientSideActions?.filter((c) => c.expectsDedicatedReply).length ??
+        0) === 0;
+
+    return {
+      sessionId: session.id,
+      previewWebhookRoom:
+        startParams.type === "preview" && startParams.userId
+          ? `${startParams.userId}/${typebot.id}/webhooks`
+          : undefined,
+      typebot: {
+        id: typebot.id,
+        version: typebot.version,
+        theme: typebot.theme,
+        settings: typebot.settings,
+      },
+      messages,
+      input,
+      dynamicTheme,
+      logs,
+      clientSideActions,
+      progress: newSessionState.progressMetadata
+        ? isEnded
+          ? 100
+          : computeCurrentProgress({
+              typebotsQueue: newSessionState.typebotsQueue,
+              progressMetadata: newSessionState.progressMetadata,
+              currentInputBlockId: input?.id,
+            })
+        : undefined,
+    };
+  });
+};

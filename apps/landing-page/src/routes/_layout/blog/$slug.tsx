@@ -1,0 +1,108 @@
+import { createFileRoute, notFound } from "@tanstack/react-router";
+import { cx } from "@typebot.io/ui/lib/cva";
+import codeSnippetsCssUrl from "@/assets/code-snippet.css?url";
+import { ContentPageWrapper } from "@/components/ContentPageWrapper";
+import { TextLink } from "@/components/link";
+import { currentBaseUrl } from "@/constants";
+import { Mdx } from "@/features/blog/components/mdx";
+import { authors } from "@/features/blog/data/authors";
+import { formatDate } from "@/features/blog/helpers";
+import { createMetaTags } from "@/lib/createMetaTags";
+
+export const Route = createFileRoute("/_layout/blog/$slug")({
+  loader: async ({ params }) => {
+    const { allPosts } = await import("@/content-collections");
+    const post = allPosts.find(
+      (post) => post._meta.path === `blog/${params.slug}`,
+    );
+
+    if (!post) {
+      throw notFound();
+    }
+
+    return { post, author: authors[post.author as keyof typeof authors] };
+  },
+  head: ({ loaderData }) => ({
+    links: loaderData
+      ? [
+          { rel: "stylesheet", href: codeSnippetsCssUrl },
+          {
+            rel: "canonical",
+            href: `${currentBaseUrl}/${loaderData.post._meta.path}`,
+          },
+        ]
+      : [],
+    meta: loaderData
+      ? [
+          ...createMetaTags({
+            title: loaderData?.post.title,
+            description: loaderData?.post.description,
+            imagePath: loaderData?.post.cover ?? "/images/default-og.png",
+            path: `/${loaderData.post._meta.path}`,
+          }),
+        ]
+      : [],
+  }),
+  component: RouteComponent,
+});
+
+function RouteComponent() {
+  const { post, author } = Route.useLoaderData();
+  return (
+    <ContentPageWrapper className="max-w-7xl pt-16 md:pt-2">
+      <div className="flex gap-4 justify-center items-start">
+        <article
+          className={cx(
+            "prose prose-p:text-lg prose-strong:font-medium prose-video:rounded-xl prose-a:text-[currentColor] max-w-4xl bg-white px-12 py-10 rounded-xl border",
+            "prose-figure:my-0 prose-img:rounded-xl prose-img:max-h-[60vh] prose-img:w-auto",
+            "prose-code:bg-gray-4 prose-code:rounded-md prose-code:text-orange-10 prose-code:border prose-code:border-gray-6 prose-code:p-1 prose-code:py-0.5 prose-code:font-normal",
+          )}
+        >
+          <div className="flex flex-col gap-2">
+            <TextLink
+              rel="nofollow"
+              href="/blog"
+              className="not-prose font-normal uppercase text-sm"
+            >
+              ← All articles
+            </TextLink>
+
+            <div className="flex flex-col gap-2">
+              <h1 className="inline-block font-heading text-4xl not-prose text-foreground my-4 font-bold lg:text-5xl">
+                {post.title}
+              </h1>
+              <span className="inline-flex gap-1 items-center not-prose text-sm">
+                {post.updatedAt ? (
+                  <time dateTime={post.postedAt} className="block ">
+                    Updated on {formatDate(post.updatedAt)}
+                  </time>
+                ) : (
+                  <time dateTime={post.postedAt} className="block ">
+                    Published on {formatDate(post.postedAt ?? "")}
+                  </time>
+                )}
+                • Written by
+                <img
+                  src={author.imageSrc}
+                  alt={author.name}
+                  className="size-7 rounded-full border-2 border-orange-9"
+                />
+                <TextLink href={author.url} rel="nofollow">
+                  {author.name}
+                </TextLink>
+              </span>
+              {post.cover && (
+                <img
+                  src={post.cover}
+                  alt={post.title}
+                  className="w-full rounded-xl object-cover max-h-[50vh]"
+                />
+              )}
+            </div>
+          </div>
+          <Mdx code={post.mdx} />
+        </article>
+      </div>
+    </ContentPageWrapper>
+  );
+}

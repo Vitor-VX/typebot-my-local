@@ -1,0 +1,169 @@
+import { ORPCError } from "@orpc/server";
+import { LogicBlockType } from "@typebot.io/blocks-logic/constants";
+import { getSession } from "@typebot.io/chat-session/queries/getSession";
+import { env } from "@typebot.io/env";
+import { parseGroups } from "@typebot.io/groups/helpers/parseGroups";
+import { byId } from "@typebot.io/lib/utils";
+import prisma from "@typebot.io/prisma";
+import type { Prisma } from "@typebot.io/prisma/types";
+import { isTypebotVersionAtLeastV6 } from "@typebot.io/schemas/helpers/isTypebotVersionAtLeastV6";
+import { getTypebotAccessRight } from "@typebot.io/typebot/helpers/getTypebotAccessRight";
+import { resumeWhatsAppFlow } from "@typebot.io/whatsapp/resumeWhatsAppFlow";
+import { z } from "zod";
+import { publishWebhook } from "./publishWebhook";
+import { signWhatsAppWebhookResponse } from "./signWhatsAppWebhookResponse";
+
+export const executeWebhookInputSchema = z.object({
+  params: z.object({
+    typebotId: z.string(),
+    blockId: z.string(),
+    resultId: z.string(),
+  }),
+  body: z.unknown(),
+});
+
+type Context = {
+  user: Pick<Prisma.User, "email" | "id">;
+};
+
+export const handleExecuteWebhook = async ({
+  input: {
+    params: { typebotId, blockId, resultId },
+    body,
+  },
+  context: { user },
+}: {
+  input: z.infer<typeof executeWebhookInputSchema>;
+  context: Context;
+}) => {
+  if (!env.NEXT_PUBLIC_PARTYKIT_HOST)
+    throw new ORPCError("NOT_FOUND", {
+      message: "PartyKit not configured",
+    });
+
+  const typebot = await prisma.typebot.findUnique({
+    where: { id: typebotId },
+    select: {
+      version: true,
+      groups: true,
+      whatsAppCredentialsId: true,
+      workspace: {
+        select: {
+          id: true,
+          isSuspended: true,
+          isPastDue: true,
+          members: {
+            where: { userId: user.id },
+            select: {
+              userId: true,
+              role: true,
+            },
+          },
+        },
+      },
+      collaborators: {
+        where: { userId: user.id },
+        select: {
+          userId: true,
+          type: true,
+        },
+      },
+    },
+  });
+
+  // Resuming a flow requires write access, independently of public sharing.
+  if (
+    !typebot ||
+    typebot.workspace.isSuspended ||
+    typebot.workspace.isPastDue ||
+    getTypebotAccessRight(user, typebot) !== "write"
+  )
+    throw new ORPCError("NOT_FOUND", {
+      message: "Typebot not found",
+    });
+
+  if (!isTypebotVersionAtLeastV6(typebot.version))
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Typebot version not supported",
+    });
+
+  const block = parseGroups(typebot.groups, {
+    typebotVersion: typebot.version,
+  })
+    .flatMap((g) => g.blocks)
+    .find(byId(blockId));
+
+  if (!block || block.type !== LogicBlockType.WEBHOOK)
+    throw new ORPCError("NOT_FOUND", {
+      message: "Webhook block not found",
+    });
+
+  const result = await prisma.result.findFirst({
+    where: {
+      id: resultId,
+      typebotId,
+    },
+    select: {
+      lastChatSessionId: true,
+    },
+  });
+
+  if (!result?.lastChatSessionId)
+    throw new ORPCError("NOT_FOUND", {
+      message: "No chat session found",
+    });
+
+  const chatSession = await getSession(result.lastChatSessionId);
+
+  if (
+    !chatSession?.state ||
+    chatSession.state.typebotsQueue[0]?.typebot.id !== typebotId ||
+    chatSession.state.typebotsQueue[0]?.resultId !== resultId ||
+    chatSession.state.currentBlockId !== blockId ||
+    !chatSession.state.pendingWebhook ||
+    chatSession.state.pendingWebhook.blockId !== blockId ||
+    chatSession.state.pendingWebhook.expiresAt <= Date.now()
+  )
+    throw new ORPCError("BAD_REQUEST", { message: "No matching webhook wait" });
+
+  if (chatSession.state.whatsApp) {
+    if (!typebot.whatsAppCredentialsId)
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: "Found WA session but no credentialsId in typebot",
+      });
+
+    const from = chatSession.id.split("-").at(-1);
+    if (!from)
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message:
+          "Expected session ID to be in format: wa-{phoneNumberId}-{receivedMessage.from}",
+      });
+
+    await resumeWhatsAppFlow({
+      receivedMessages: [
+        {
+          from,
+          timestamp: new Date().toISOString(),
+          type: "webhook",
+          webhook: {
+            data: await signWhatsAppWebhookResponse(chatSession.state, body),
+          },
+        },
+      ],
+      workspaceId: typebot.workspace.id,
+      sessionId: chatSession.id,
+      credentialsId: typebot.whatsAppCredentialsId,
+      callFrom: "webhook",
+    });
+
+    return { message: "OK" };
+  }
+
+  await publishWebhook(
+    chatSession.state.pendingWebhook.room,
+    blockId,
+    body,
+    chatSession.state.pendingWebhook.nonce,
+  );
+  return { message: "OK" };
+};
