@@ -26,6 +26,7 @@ FROM base AS builder
 ARG SCOPE
 COPY . .
 RUN SENTRYCLI_SKIP_DOWNLOAD=1 bun install --frozen-lockfile
+RUN bunx nx sync
 RUN SKIP_ENV_CHECK=true DATABASE_URL=postgresql:// NEXT_PUBLIC_VIEWER_URL=http://localhost bunx nx build ${SCOPE}
 RUN DATABASE_URL=postgresql:// bunx nx db:generate prisma
 
