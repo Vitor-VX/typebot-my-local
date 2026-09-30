@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import { useMutation } from "@tanstack/react-query";
 import { T, useTranslate } from "@tolgee/react";
-import { InputBlockType } from "@typebot.io/blocks-inputs/constants";
+// import { InputBlockType } from "@typebot.io/blocks-inputs/constants";
 import { isNotDefined } from "@typebot.io/lib/utils";
 import { getPublicId } from "@typebot.io/typebot/helpers/getPublicId";
 import { Alert } from "@typebot.io/ui/components/Alert";
@@ -20,9 +20,9 @@ import { useRouter } from "next/router";
 import { useRef, useState } from "react";
 import { TextLink } from "@/components/TextLink";
 import { ChangePlanDialog } from "@/features/billing/components/ChangePlanDialog";
-import { isFreePlan } from "@/features/billing/helpers/isFreePlan";
+// import { isFreePlan } from "@/features/billing/helpers/isFreePlan";
 import { useTypebot } from "@/features/editor/providers/TypebotProvider";
-import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
+// import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { useTimeSince } from "@/hooks/useTimeSince";
 import {
   orpc,
@@ -41,9 +41,10 @@ export const PublishButton = ({
   ...props
 }: Props) => {
   const { t } = useTranslate();
-  const { workspace } = useWorkspace();
+  // const { workspace } = useWorkspace();
   const { push, query, pathname } = useRouter();
-  const { isOpen, onOpen, onClose } = useOpenControls();
+  // const { isOpen, onOpen, onClose } = useOpenControls();
+  const { isOpen, onClose } = useOpenControls();
   const {
     isOpen: isNewEngineWarningOpen,
     onOpen: onNewEngineWarningOpen,
@@ -118,13 +119,13 @@ export const PublishButton = ({
       }),
     );
 
-  const hasInputFile = typebot?.groups
-    .flatMap((g) => g.blocks)
-    .some((b) => b.type === InputBlockType.FILE);
+  // const hasInputFile = typebot?.groups
+  //   .flatMap((g) => g.blocks)
+  //   .some((b) => b.type === InputBlockType.FILE);
 
   const handlePublishClick = async () => {
     if (!typebot?.id) return;
-    if (isFreePlan(workspace) && hasInputFile) return onOpen();
+    // if (isFreePlan(workspace) && hasInputFile) return onOpen();
     await save(
       !typebot.publicId ? { publicId: getPublicId(typebot) } : undefined,
       true,
