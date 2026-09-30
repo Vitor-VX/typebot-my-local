@@ -3,7 +3,7 @@ import { InputBlockType } from "@typebot.io/blocks-inputs/constants";
 import { env } from "@typebot.io/env";
 import { parseGroups } from "@typebot.io/groups/helpers/parseGroups";
 import prisma from "@typebot.io/prisma";
-import { Plan } from "@typebot.io/prisma/enum";
+// import { Plan } from "@typebot.io/prisma/enum";
 import { computeRiskLevel } from "@typebot.io/radar/computeRiskLevel";
 import { detectTrademarkInfrigement } from "@typebot.io/radar/detectTrademarkInfrigement";
 import {
@@ -81,14 +81,14 @@ export const handlePublishTypebot = async ({
 
   const hasFileUploadBlocks = parseGroups(existingTypebot.groups, {
     typebotVersion: existingTypebot.version,
-  }).some((group) =>
-    group.blocks.some((block) => block.type === InputBlockType.FILE),
+  }).some((group: any) =>
+    group.blocks.some((block:any) => block.type === InputBlockType.FILE),
   );
 
-  if (hasFileUploadBlocks && existingTypebot.workspace.plan === Plan.FREE)
-    throw new ORPCError("BAD_REQUEST", {
-      message: "File upload blocks can't be published on the free plan",
-    });
+  // if (hasFileUploadBlocks && existingTypebot.workspace.plan === Plan.FREE)
+  //   throw new ORPCError("BAD_REQUEST", {
+  //     message: "File upload blocks can't be published on the free plan",
+  //   });
 
   const typebotWasVerified =
     existingTypebot.riskLevel === -1 || existingTypebot.workspace.isVerified;
