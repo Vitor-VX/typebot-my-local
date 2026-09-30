@@ -51,7 +51,7 @@ services:
         - SCOPE=builder
     image: typebot-builder-local
     ports:
-      - "8080:3000"
+      - "8082:3000"
 
   typebot-viewer:
     <<: *typebot-common
@@ -61,7 +61,7 @@ services:
         - SCOPE=viewer
     image: typebot-viewer-local
     ports:
-      - "8081:3000"
+      - "8084:3000"
 
 networks:
   typebot-network:
