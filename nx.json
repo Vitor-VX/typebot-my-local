@@ -1,8 +1,5 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "sync": {
-    "applyChanges": true
-  },
   "tui": {
     "enabled": false
   },
