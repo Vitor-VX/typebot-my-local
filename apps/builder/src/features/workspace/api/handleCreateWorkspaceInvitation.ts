@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import gentleRateLimiter from "@typebot.io/auth/lib/gentleRateLimiter";
-import { getSeatsLimit } from "@typebot.io/billing/helpers/getSeatsLimit";
+// import { getSeatsLimit } from "@typebot.io/billing/helpers/getSeatsLimit";
 import { sendWorkspaceMemberInvitationEmail } from "@typebot.io/emails/transactional/WorkspaceMemberInvitationEmail";
 import { env } from "@typebot.io/env";
 import prisma from "@typebot.io/prisma";
@@ -47,25 +47,25 @@ export const handleCreateWorkspaceInvitation = async ({
         data: { id: workspaceId },
       });
 
-      const [existingMembersCount, existingInvitationsCount] =
-        await Promise.all([
-          transaction.memberInWorkspace.count({
-            where: {
-              workspaceId,
-              role: { not: WorkspaceRole.GUEST },
-            },
-          }),
-          transaction.workspaceInvitation.count({ where: { workspaceId } }),
-        ]);
+      // const [existingMembersCount, existingInvitationsCount] =
+      //   await Promise.all([
+      //     transaction.memberInWorkspace.count({
+      //       where: {
+      //         workspaceId,
+      //         role: { not: WorkspaceRole.GUEST },
+      //       },
+      //     }),
+      //     transaction.workspaceInvitation.count({ where: { workspaceId } }),
+      //   ]);
 
-      const seatsLimit = getSeatsLimit(workspace);
-      if (
-        seatsLimit !== "inf" &&
-        seatsLimit <= existingMembersCount + existingInvitationsCount
-      )
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Seats limit reached",
-        });
+      // const seatsLimit = getSeatsLimit(workspace);
+      // if (
+      //   seatsLimit !== "inf" &&
+      //   seatsLimit <= existingMembersCount + existingInvitationsCount
+      // )
+      //   throw new ORPCError("BAD_REQUEST", {
+      //     message: "Seats limit reached",
+      //   });
 
       if (existingUser) {
         await transaction.memberInWorkspace.create({
